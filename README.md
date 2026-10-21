@@ -1,57 +1,82 @@
-# Football Prediction Pro v3 — deployable research starter
+# Football Prediction Pro v4 — Betting Intelligence Lab
 
-A Streamlit web app for historical match analysis, leakage-aware pre-match features, 1X2 ML probabilities, Poisson goal markets, and chronological holdout evaluation. It is a research tool, not a guaranteed betting system.
+A Streamlit research application for football match probabilities and **hypothetical** betting analytics. Built on the v3 architecture. **Not a verified profitable strategy, not live odds, no automated betting.**
 
-## Run on a computer
+## Supported competitions
 
-Requires Python 3.10+.
+- Premier League (E0), La Liga (SP1), Bundesliga (D1), Serie A (I1), Ligue 1 (F1): historical match results downloaded from `football-data.co.uk` (provider availability varies).
+- Champions League: user-uploaded CSV only. No UCL automatic data feed.
+
+The app does not use licensed live xG, injury, lineups or bookmaker odds. Current 1X2 uses pre-match rolling features + logistic regression; goal markets use a separate Poisson score model. The two are **not jointly calibrated**. An unused experimental Dixon–Coles module from v3 remains in the repository; it is not the active app's prediction engine.
+
+## Deploy to existing Streamlit app
+
+1. **Back up your v3 GitHub repository** or create a new branch.
+2. Download and unzip v4. **Upload the contents of the `football_prediction_pro_v4` directory, not the directory itself**, to the **root** of the same GitHub repository. Replace matching files and commit. Preserve `.github/workflows/daily-refresh.yml` (hidden `.github` directory).
+3. In Streamlit Community Cloud, your existing app should redeploy when the repository's main branch changes. Confirm **Main file path** is `app.py` and branch is correct. If not, Manage app → Settings / Deploy settings and adjust.
+4. If an error occurs, open **Manage app → Logs**. Check `requirements.txt`, `app.py` path and GitHub commit. You can revert the commit if needed.
+5. In the sidebar, choose a league and seasons and click **Load data and train**. For Champions League, upload a CSV then click the same button. Next click **Run walk-forward validation** to see the calibration table and paper simulation.
+
+## Local install and tests
+
+Requires Python 3.11+:
 
 ```bash
-python -m venv .venv
-# Windows: .venv\\Scripts\\activate
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+python -m pytest -q tests
 streamlit run app.py
 ```
 
-The app loads a default league/season selection on first visit. Use the sidebar to choose league/seasons and **Reload data and retrain now** to force a fresh request. App-level source data is cached for 24 hours; it refreshes when the app is used after cache expiry.
+## Data and automatic refresh
 
-## Deploy online (Streamlit Community Cloud)
+`refresh_data.py` and `.github/workflows/daily-refresh.yml` are carried forward from v3. The workflow attempts to fetch league match results once per day and commit `data/auto_history.csv` to the repository. **This does not automatically fetch live bookmaker odds, UCL matches, or retrain persisted model files.** The web app reads football-data.co.uk when you load/train and caches source data for 24 hours. Github Actions schedules can be delayed or disabled by GitHub; confirm the Actions tab shows successful runs. Repository write permission is needed for committing data. On a public repository, never commit API keys or private data.
 
-1. Create a GitHub account/repository and upload the contents of this folder (the files must be at repository root, not nested an extra level).
-2. Open https://share.streamlit.io/ and sign in with GitHub.
-3. Choose **Create app**, select the repository and branch, set main file path to `app.py`, and deploy.
-4. Open the deployed HTTPS URL on both phone and computer. The same URL works on both; no separate mobile install is needed.
-5. Public apps should not contain secrets. If adding a paid data API later, store keys in Streamlit app Secrets and never commit them.
+## UCL CSV format
 
-## Scheduled automatic data refresh
+CSV columns: `Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR`.
 
-Included workflow: `.github/workflows/daily-refresh.yml`. It runs every day at 02:17 UTC and can also be started manually from GitHub → Actions → Daily football data refresh → Run workflow.
+- `Date` should be unambiguous, preferably `DD/MM/YYYY` for this import; `FTR` must be H, D, A.
+- Only completed matches. Aim for **multiple seasons and at least 120 post-feature matches**. UEFA team-name variations should be normalized before upload.
+- UCL group/knockout stage effects, extra-time, penalties and neutral venues are not modeled. **Use 90-minute regulation-time results only**.
+- The provided `sample_matches.csv` is merely a format sample, insufficient for model training.
 
-To enable it:
+## Evaluation / limitations
 
-1. Push this project to GitHub.
-2. In the repository, open **Settings → Actions → General → Workflow permissions** and allow read/write repository contents.
-3. Open **Actions** and enable workflows if GitHub prompts you.
-4. Run the workflow once manually and check its log for the downloaded row count and latest match date.
-5. The workflow commits `data/auto_history.csv` only when the data changes. Repository commits normally trigger a Streamlit Cloud redeploy if the app is connected to that repository.
+- Date-grouped pre-match features prevent same-day match-result leakage.
+- Simple holdout uses chronological train/test dates; v4 optional expanding-window validation repeatedly refits only on earlier match dates.
+- Walk-forward validation is more realistic but still subject to source bias, omitted variables, market selection and repeated tuning. Calibration table is diagnostic, not calibration correction.
+- Fixed-odds paper backtest uses **the same hypothetical odds for all matches**; its ROI is **not realized historical ROI**. For a real ROI study, archive actual bookmaker prices at the pre-match decision time, including vig and timestamps, and account for limits/fees.
+- Kelly fraction is capped and purely illustrative. Positive model EV does not establish a reliable advantage. Never treat predicted probabilities as guaranteed outcomes.
+- No API keys, betting execution or wagering integrations are provided.
 
-The daily job refreshes historical results from football-data.co.uk for five European leagues and recent seasons. It does not provide upcoming fixtures, live scores, xG, injuries, lineups or bookmaker odds. The source may publish results with delays or change CSV availability. A scheduled refresh cannot force a source to publish data that it does not yet provide.
+## File guide
 
-## What v3 includes
+- `app.py`: Streamlit dashboard
+- `engine.py`: historical data, leakage-aware rolling features, 1X2 model, goal markets
+- `betting.py`: odds normalization, EV, capped Kelly, CLV and paper simulation
+- `walkforward.py`: expanding-window evaluation and calibration diagnostics
+- `tests/test_betting.py`: automated unit tests
+- `refresh_data.py`: scheduled league-results downloader (from v3)
+- `.github/workflows/daily-refresh.yml`: GitHub Actions schedule (from v3)
 
-- Historical results from football-data.co.uk for supported leagues/seasons.
-- Team attack/defence and form features built only from matches strictly before each match date.
-- Regularized multinomial logistic regression for 1X2 probabilities.
-- Chronological holdout metrics and downloadable audit predictions.
-- Poisson goal-market estimates for totals, BTTS, Asian handicap settlement and correct scores.
-- Fair-odds / expected-return calculator and a daily GitHub Actions refresh workflow.
+## Next steps for production-grade research
 
-## Limitations / next production work
+1. Licensed, timestamped bookmaker odds + odds history and line movements.
+2. Licensed xG, injuries, team news, UCL fixture feed, team ID normalization.
+3. Store timestamped predictions, model version, data snapshot and actual results in durable database.
+4. Fully walk-forward calibration and settlement tests for each market, including quarter Asian handicaps.
+5. Monitor calibration drift, data freshness, outages, bookmaker rule differences and closing-line value.
 
-- The scheduled dataset is refreshed independently; the app's current model training still loads selected seasons from the source directly.
-- Current ML 1X2 and Poisson goal-market outputs are separate models and not jointly calibrated.
-- The current backtest is a chronological holdout, not a full rolling-origin evaluation of every market or betting ROI.
-- Team availability, xG, fixture feeds and odds require a licensed/reliable provider; none are silently fabricated here.
-- For a durable multi-user production service, add a database, model/version registry, automated tests, monitoring, and secrets management.
-- Estimates are uncertain and do not guarantee positive returns. Never treat model probabilities as certainty.
+
+## Live odds and live xG API integrations
+
+Optional adapters use The Odds API v4 for current bookmaker odds and API-Football v3 for live fixtures and statistics where available. API coverage, pricing, quotas and xG support vary by plan and league; no provider guarantees xG for every fixture.
+
+In Streamlit Cloud **Manage app → Settings → Secrets**, add TOML with your own keys:
+```toml
+ODDS_API_KEY = "your_the_odds_api_key"
+API_FOOTBALL_KEY = "your_api_football_key"
+```
+Never commit real keys to GitHub. The app fetches data only when you press the relevant button. Requests consume provider quota. This is read-only and does not place bets.
+
+Docs: https://the-odds-api.com/liveapi/guides/v4/ and https://www.api-football.com/documentation-v3
